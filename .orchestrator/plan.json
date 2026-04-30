@@ -1,0 +1,4 @@
+{
+  "complexityTier": "mid",
+  "plan": "Redis-style sorted sets implemented as a single-file loadable extension at ext/misc/sortedsets.c. Storage: a backing table (_sortedsets) with compound indexes for efficient rank/range queries. API: 8 scalar SQL functions (zadd, zrem, zscore, zrank, zrevrank, zcard, zcount, zincrby) plus an eponymous read-only virtual table (zrange) for range queries by rank or score. Build: add to TESTSRC in main.mk. Tests: test/sortedsets.test with 6 test groups covering all operations, edge cases, and the virtual table. Full plan written to PLAN.md in the working directory."
+}

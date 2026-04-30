@@ -1,0 +1,178 @@
+# 2026-04-30
+#
+# The author disclaims copyright to this source code.  In place of
+# a legal notice, here is a blessing:
+#
+#    May you do good and not evil.
+#    May you find forgiveness for yourself and forgive others.
+#    May you share freely, never taking more than you give.
+#
+#***********************************************************************
+#
+# This file implements tests for the sortedsets extension:
+# Redis-style sorted sets backed by a SQLite table.
+#
+
+set testdir [file dirname $argv0]
+source $testdir/tester.tcl
+set testprefix sortedsets
+
+ifcapable !vtab {
+  finish_test
+  return
+}
+load_static_extension db sortedsets
+
+# ---------- sortedsets-1.x: Basic ZADD/ZSCORE/ZREM ----------
+
+do_execsql_test sortedsets-1.1 {
+  SELECT zadd('myset', 1.0, 'alice');
+} {1}
+
+do_execsql_test sortedsets-1.2 {
+  SELECT zadd('myset', 2.0, 'alice');
+} {0}
+
+do_execsql_test sortedsets-1.3 {
+  SELECT zscore('myset', 'alice');
+} {2.0}
+
+do_execsql_test sortedsets-1.4 {
+  SELECT zscore('myset', 'nobody');
+} {{}}
+
+do_execsql_test sortedsets-1.5 {
+  SELECT zadd('myset', 3.0, 'bob');
+  SELECT zrem('myset', 'bob');
+} {1 1}
+
+do_execsql_test sortedsets-1.6 {
+  SELECT zrem('myset', 'nobody');
+} {0}
+
+# ---------- sortedsets-2.x: ZRANK/ZREVRANK ----------
+
+# Set up a sorted set with multiple members
+do_execsql_test sortedsets-2.0 {
+  SELECT zadd('ranks', 10.0, 'alice');
+  SELECT zadd('ranks', 20.0, 'bob');
+  SELECT zadd('ranks', 30.0, 'charlie');
+} {1 1 1}
+
+do_execsql_test sortedsets-2.1 {
+  SELECT zrank('ranks', 'alice');
+  SELECT zrank('ranks', 'bob');
+  SELECT zrank('ranks', 'charlie');
+} {0 1 2}
+
+do_execsql_test sortedsets-2.2 {
+  SELECT zrevrank('ranks', 'alice');
+  SELECT zrevrank('ranks', 'bob');
+  SELECT zrevrank('ranks', 'charlie');
+} {2 1 0}
+
+do_execsql_test sortedsets-2.3 {
+  SELECT zrank('ranks', 'nobody');
+} {{}}
+
+# ---------- sortedsets-3.x: ZCARD/ZCOUNT ----------
+
+do_execsql_test sortedsets-3.1 {
+  SELECT zcard('ranks');
+} {3}
+
+do_execsql_test sortedsets-3.2 {
+  SELECT zcard('nonexistent');
+} {0}
+
+do_execsql_test sortedsets-3.3 {
+  SELECT zcount('ranks', 15.0, 25.0);
+} {1}
+
+do_execsql_test sortedsets-3.3b {
+  SELECT zcount('ranks', 10.0, 30.0);
+} {3}
+
+# ---------- sortedsets-4.x: ZINCRBY ----------
+
+do_execsql_test sortedsets-4.1 {
+  SELECT zincrby('incr', 5.0, 'x');
+} {5.0}
+
+do_execsql_test sortedsets-4.2 {
+  SELECT zincrby('incr', 3.0, 'x');
+} {8.0}
+
+do_execsql_test sortedsets-4.3 {
+  SELECT zincrby('incr', -2.0, 'x');
+} {6.0}
+
+do_execsql_test sortedsets-4.4 {
+  SELECT zincrby('incr', 10.0, 'newmember');
+} {10.0}
+
+# ---------- sortedsets-5.x: Virtual table (zrange) ----------
+
+# Set up data for range queries
+do_execsql_test sortedsets-5.0 {
+  SELECT zadd('zr', 1.0, 'a');
+  SELECT zadd('zr', 2.0, 'b');
+  SELECT zadd('zr', 3.0, 'c');
+  SELECT zadd('zr', 4.0, 'd');
+  SELECT zadd('zr', 5.0, 'e');
+} {1 1 1 1 1}
+
+do_execsql_test sortedsets-5.1 {
+  SELECT member, score FROM zrange WHERE key='zr' AND start=0 AND stop=2;
+} {a 1.0 b 2.0 c 3.0}
+
+do_execsql_test sortedsets-5.2 {
+  SELECT member, score FROM zrange WHERE key='zr' AND min=2.0 AND max=4.0;
+} {b 2.0 c 3.0 d 4.0}
+
+do_execsql_test sortedsets-5.3 {
+  SELECT member, score FROM zrange WHERE key='zr' AND start=0 AND stop=2 AND rev=1;
+} {e 5.0 d 4.0 c 3.0}
+
+do_execsql_test sortedsets-5.4 {
+  SELECT member, score FROM zrange WHERE key='zr' AND start=0 AND stop=-1;
+} {a 1.0 b 2.0 c 3.0 d 4.0 e 5.0}
+
+do_execsql_test sortedsets-5.5 {
+  SELECT member, score FROM zrange WHERE key='nonexistent' AND start=0 AND stop=-1;
+} {}
+
+# ---------- sortedsets-6.x: Edge cases ----------
+
+do_execsql_test sortedsets-6.1 {
+  SELECT zadd('set1', 1.0, 'x');
+  SELECT zadd('set2', 2.0, 'x');
+  SELECT zscore('set1', 'x');
+  SELECT zscore('set2', 'x');
+} {1 1 1.0 2.0}
+
+# Score tiebreaking by member name
+do_execsql_test sortedsets-6.2 {
+  SELECT zadd('ties', 5.0, 'banana');
+  SELECT zadd('ties', 5.0, 'apple');
+  SELECT zadd('ties', 5.0, 'cherry');
+  SELECT member FROM zrange WHERE key='ties' AND start=0 AND stop=-1;
+} {1 1 1 apple banana cherry}
+
+do_execsql_test sortedsets-6.3 {
+  SELECT zadd('big', 1e300, 'huge');
+  SELECT zadd('big', -1e300, 'tiny');
+  SELECT member FROM zrange WHERE key='big' AND start=0 AND stop=-1;
+} {1 1 tiny huge}
+
+do_execsql_test sortedsets-6.4 {
+  SELECT zadd('empty', 1.0, '');
+  SELECT zscore('empty', '');
+} {1 1.0}
+
+do_execsql_test sortedsets-6.5 {
+  SELECT zadd('unicode', 1.0, '日本語');
+  SELECT zscore('unicode', '日本語');
+} {1 1.0}
+
+finish_test
