@@ -1,0 +1,4 @@
+{
+  "complexityTier": "complex",
+  "plan": "Full plan written to PLAN.md. Creates ext/misc/sortedset.c — a new SQLite extension providing Redis-style sorted sets via: (1) a writable virtual table module ('sortedset') with xBestIndex optimization for score range queries, member lookups, and ordered scans; (2) scalar SQL functions (zset_score, zset_rank, zset_card, zset_count) for quick lookups; (3) backing storage in regular SQLite tables with B-tree indexes on (score, member). The virtual table supports INSERT (ZADD), DELETE (ZREM), UPDATE, and SELECT with WHERE/ORDER BY/LIMIT. Rank is a HIDDEN computed column. Plan covers 11 implementation steps, build integration (main.mk, Makefile.msc), and a comprehensive TCL test suite (test/sortedset01.test). Key design: uses sqlite3_mprintf %w for safe identifier escaping, sqlite3_vtab_on_conflict for conflict resolution, and prepared-statement-wrapped cursors for efficient iteration."
+}
