@@ -801,6 +801,7 @@ TESTSRC += \
   $(TOP)/ext/misc/regexp.c \
   $(TOP)/ext/misc/remember.c \
   $(TOP)/ext/misc/series.c \
+  $(TOP)/ext/misc/sortedsets.c \
   $(TOP)/ext/misc/spellfix.c \
   $(TOP)/ext/misc/stmtrand.c \
   $(TOP)/ext/misc/totype.c \
