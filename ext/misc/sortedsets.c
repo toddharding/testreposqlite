@@ -237,106 +237,7 @@ static void zrank_func(
   const char *member;
   sqlite3_stmt *pStmt = 0;
   int rc;
-
-  assert( argc==2 );
-  if( sqlite3_value_type(argv[0])==SQLITE_NULL
-   || sqlite3_value_type(argv[1])==SQLITE_NULL
-  ){
-    sqlite3_result_null(ctx);
-    return;
-  }
-
-  rc = sortedsets_ensure_table(db);
-  if( rc!=SQLITE_OK ){
-    sqlite3_result_error_code(ctx, rc);
-    return;
-  }
-
-  key = (const char *)sqlite3_value_text(argv[0]);
-  member = (const char *)sqlite3_value_text(argv[1]);
-
-  rc = sqlite3_prepare_v2(db,
-    "SELECT COUNT(*) FROM _sortedsets AS a "
-    "WHERE a.key=?1 AND EXISTS("
-    "  SELECT 1 FROM _sortedsets AS b WHERE b.key=?1 AND b.member=?2"
-    ") AND ("
-    "  a.score < (SELECT score FROM _sortedsets WHERE key=?1 AND member=?2)"
-    "  OR (a.score = (SELECT score FROM _sortedsets WHERE key=?1 AND member=?2)"
-    "      AND a.member < ?2)"
-    ")",
-    -1, &pStmt, 0);
-  if( rc!=SQLITE_OK ){
-    sqlite3_result_error_code(ctx, rc);
-    return;
-  }
-  sqlite3_bind_text(pStmt, 1, key, -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(pStmt, 2, member, -1, SQLITE_TRANSIENT);
-  if( sqlite3_step(pStmt)==SQLITE_ROW ){
-    /* If the member doesn't exist, the EXISTS check will make COUNT return 0
-    ** but we need to distinguish "rank 0" from "not found". We check via
-    ** a separate query approach embedded in the SQL: the EXISTS subquery
-    ** ensures we only count when the member exists. But if member doesn't
-    ** exist, COUNT(*) will still return 0 because no rows match.
-    ** We need a different approach. */
-    sqlite3_finalize(pStmt);
-
-    /* First check if the member exists */
-    rc = sqlite3_prepare_v2(db,
-      "SELECT score FROM _sortedsets WHERE key=?1 AND member=?2",
-      -1, &pStmt, 0);
-    if( rc!=SQLITE_OK ){
-      sqlite3_result_error_code(ctx, rc);
-      return;
-    }
-    sqlite3_bind_text(pStmt, 1, key, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(pStmt, 2, member, -1, SQLITE_TRANSIENT);
-    if( sqlite3_step(pStmt)!=SQLITE_ROW ){
-      sqlite3_result_null(ctx);
-      sqlite3_finalize(pStmt);
-      return;
-    }
-    double memberScore = sqlite3_column_double(pStmt, 0);
-    sqlite3_finalize(pStmt);
-
-    /* Count members that rank before this one */
-    rc = sqlite3_prepare_v2(db,
-      "SELECT COUNT(*) FROM _sortedsets "
-      "WHERE key=?1 AND (score < ?3 OR (score = ?3 AND member < ?2))",
-      -1, &pStmt, 0);
-    if( rc!=SQLITE_OK ){
-      sqlite3_result_error_code(ctx, rc);
-      return;
-    }
-    sqlite3_bind_text(pStmt, 1, key, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(pStmt, 2, member, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_double(pStmt, 3, memberScore);
-    if( sqlite3_step(pStmt)==SQLITE_ROW ){
-      sqlite3_result_int64(ctx, sqlite3_column_int64(pStmt, 0));
-    }else{
-      sqlite3_result_null(ctx);
-    }
-    sqlite3_finalize(pStmt);
-    return;
-  }
-  sqlite3_result_null(ctx);
-  sqlite3_finalize(pStmt);
-}
-
-/*
-** zrevrank(key, member) -> INTEGER or NULL
-**
-** 0-based rank by descending score.  NULL if member absent.
-*/
-static void zrevrank_func(
-  sqlite3_context *ctx,
-  int argc,
-  sqlite3_value **argv
-){
-  sqlite3 *db = sqlite3_context_db_handle(ctx);
-  const char *key;
-  const char *member;
-  sqlite3_stmt *pStmt = 0;
-  int rc;
+  double memberScore;
 
   assert( argc==2 );
   if( sqlite3_value_type(argv[0])==SQLITE_NULL
@@ -370,7 +271,79 @@ static void zrevrank_func(
     sqlite3_finalize(pStmt);
     return;
   }
-  double memberScore = sqlite3_column_double(pStmt, 0);
+  memberScore = sqlite3_column_double(pStmt, 0);
+  sqlite3_finalize(pStmt);
+
+  /* Count members that rank before this one */
+  rc = sqlite3_prepare_v2(db,
+    "SELECT COUNT(*) FROM _sortedsets "
+    "WHERE key=?1 AND (score < ?3 OR (score = ?3 AND member < ?2))",
+    -1, &pStmt, 0);
+  if( rc!=SQLITE_OK ){
+    sqlite3_result_error_code(ctx, rc);
+    return;
+  }
+  sqlite3_bind_text(pStmt, 1, key, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(pStmt, 2, member, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_double(pStmt, 3, memberScore);
+  if( sqlite3_step(pStmt)==SQLITE_ROW ){
+    sqlite3_result_int64(ctx, sqlite3_column_int64(pStmt, 0));
+  }else{
+    sqlite3_result_null(ctx);
+  }
+  sqlite3_finalize(pStmt);
+}
+
+/*
+** zrevrank(key, member) -> INTEGER or NULL
+**
+** 0-based rank by descending score.  NULL if member absent.
+*/
+static void zrevrank_func(
+  sqlite3_context *ctx,
+  int argc,
+  sqlite3_value **argv
+){
+  sqlite3 *db = sqlite3_context_db_handle(ctx);
+  const char *key;
+  const char *member;
+  sqlite3_stmt *pStmt = 0;
+  int rc;
+  double memberScore;
+
+  assert( argc==2 );
+  if( sqlite3_value_type(argv[0])==SQLITE_NULL
+   || sqlite3_value_type(argv[1])==SQLITE_NULL
+  ){
+    sqlite3_result_null(ctx);
+    return;
+  }
+
+  rc = sortedsets_ensure_table(db);
+  if( rc!=SQLITE_OK ){
+    sqlite3_result_error_code(ctx, rc);
+    return;
+  }
+
+  key = (const char *)sqlite3_value_text(argv[0]);
+  member = (const char *)sqlite3_value_text(argv[1]);
+
+  /* First check if the member exists and get its score */
+  rc = sqlite3_prepare_v2(db,
+    "SELECT score FROM _sortedsets WHERE key=?1 AND member=?2",
+    -1, &pStmt, 0);
+  if( rc!=SQLITE_OK ){
+    sqlite3_result_error_code(ctx, rc);
+    return;
+  }
+  sqlite3_bind_text(pStmt, 1, key, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(pStmt, 2, member, -1, SQLITE_TRANSIENT);
+  if( sqlite3_step(pStmt)!=SQLITE_ROW ){
+    sqlite3_result_null(ctx);
+    sqlite3_finalize(pStmt);
+    return;
+  }
+  memberScore = sqlite3_column_double(pStmt, 0);
   sqlite3_finalize(pStmt);
 
   /* Count members that rank before this one in reverse order */
