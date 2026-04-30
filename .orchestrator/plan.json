@@ -1,0 +1,4 @@
+{
+  "complexityTier": "mid",
+  "plan": "Sorted set virtual table extension at ext/misc/sortedset.c (~400-500 lines C). Uses shadow tables for persistence (member TEXT PK, score REAL with score+member index). Implements full virtual table API: xCreate/xConnect create/connect shadow tables, xUpdate handles INSERT with UPSERT semantics + DELETE + UPDATE, xBestIndex/xFilter push down member= and score range constraints. Computed rank column via iteration counter. Tests in test/sortedset1.test (~150-200 lines TCL). Build integration: add to main.mk TESTSRC list and register in src/test1.c aExtension array. Full plan written to PLAN.md."
+}
